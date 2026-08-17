@@ -23,6 +23,10 @@ pnpm build
 - 前端：打开对话界面 → 「养成档案」tab
 - API：`GET /api/growth-profile`
 
+## 相关
+
+- [我的数字生命爱丽丝 — 插件生态中心（架构总览）](https://github.com/jonah791/alice-digital-life)
+
 ## License
 
 MIT
