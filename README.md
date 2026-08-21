@@ -5,8 +5,20 @@ DSH（DeepSeek Harness）插件：agent 的自我呈现视图——记忆/技能
 ## 功能特性
 
 - **自我呈现**：聚合当前状态（记忆/技能/插件/工具面）+ 履历里程碑 + 周目存档 + 关系档案
+- **此刻的我（v0.2）**：接入生命核心（dsh-life-core）——存在天数 / 生命状态 / 今日圈数 / 感知周期 / 自我模型（角色·关系·宣言·牵挂·价值权重）/ 最近生命轨迹（life-log 实时尾部）
+- **实时更新（v0.3）**：30s 轮询 + in-flight guard + 失败保留最后快照（不白屏）+ 手动刷新按钮 + 实时状态点
+- **精致面板（v0.3）**：分区卡片化布局、生命状态徽章（清醒/活跃/专注/疲劳/睡眠 色彩映射）、轨迹 kind 彩色徽章、宣言引用块、周目编号胶囊、里程碑发光圆点时间线
 - **前端面板**：「养成档案」tab 挂载在对话界面（对话 | 轨迹 | 养成档案）
 - **API**：`/api/growth-profile` 供外部读取
+
+## 数据源
+
+| 段 | 来源 | 缺失时 |
+|----|------|--------|
+| 记忆/里程碑/周目/关系档案 | DSH_HOME/storages/agent_memory.json | 空数组 + note |
+| 技能 | DSH_HOME/skills + ~/.agents/skills + 项目 .dsh/.agents/skills | 空数组 + note |
+| 插件 | <workspace>/self-plugins/*/package.json | 空数组 + note |
+| 此刻的我（v0.2） | DSH_HOME/life-core/state.json + life-log.jsonl | exists:false + note（面板隐藏该段） |
 
 ## 安装
 

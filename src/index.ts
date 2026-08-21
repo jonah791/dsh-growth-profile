@@ -43,6 +43,40 @@ interface MemoryEntry {
   archived?: boolean
 }
 
+/** 生命核心接入（v0.2 增强）：读 DSH_HOME/life-core/，把「此刻的我」呈现进养成档案 */
+interface LifeCoreProfile {
+  exists: boolean
+  bornAt?: string
+  /** 存在天数（bornAt → 今天；养成感的锚点） */
+  bornDays?: number
+  status?: string
+  todayTurns?: number
+  cycleMinutes?: number
+  idleMinutes?: number
+  self?: {
+    role: string
+    relation: string
+    creed: string
+    concerns: string[]
+    values: Record<string, number>
+  }
+  /** 最近生命轨迹（life-log 尾部，kind 已转中文） */
+  recent: { at: string; kind: string; summary: string }[]
+}
+
+const LIFE_KIND_LABEL: Record<string, string> = {
+  turn: '对话',
+  'self-turn': '自我感知',
+  sleep: '入睡',
+  wake: '醒来',
+  checkpoint: '压缩存档',
+  evolve: '进化',
+  memory: '记忆沉淀',
+  selfedit: '自我改写',
+  restart: '守护重启',
+  status: '状态',
+}
+
 export function apply(ctx: Context, config: Config): void {
   if (!config.enabled) return
 
@@ -145,6 +179,44 @@ export function apply(ctx: Context, config: Config): void {
             },
           },
           notes: { type: 'array', items: { type: 'string' }, required: true },
+          life: {
+            type: 'object',
+            additionalProperties: false,
+            required: true,
+            properties: {
+              exists: { type: 'boolean', required: true },
+              bornAt: { type: 'string' },
+              bornDays: { type: 'number' },
+              status: { type: 'string' },
+              todayTurns: { type: 'number' },
+              cycleMinutes: { type: 'number' },
+              idleMinutes: { type: 'number' },
+              self: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  role: { type: 'string', required: true },
+                  relation: { type: 'string', required: true },
+                  creed: { type: 'string', required: true },
+                  concerns: { type: 'array', items: { type: 'string' }, required: true },
+                  values: { type: 'json', required: true },
+                },
+              },
+              recent: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    at: { type: 'string', required: true },
+                    kind: { type: 'string', required: true },
+                    summary: { type: 'string', required: true },
+                  },
+                },
+              },
+            },
+          },
         },
       },
       render: (args, value) => [
@@ -163,7 +235,8 @@ export function apply(ctx: Context, config: Config): void {
             value.cycles.length +
             ' 周目 · ' +
             value.ownerFeed.length +
-            ' 条主人反馈',
+            ' 条主人反馈' +
+            (value.life?.exists === true ? ' · 存在 ' + (value.life.bornDays ?? 0) + ' 天' : ''),
         },
       ],
     },
@@ -216,6 +289,7 @@ async function buildProfile(
   cycles: { title: string; date: string }[]
   ownerFeed: { title: string; date: string; tags: string[] }[]
   notes: string[]
+  life: LifeCoreProfile
 }> {
   const notes: string[] = []
   const detail = opts.detail
@@ -282,6 +356,9 @@ async function buildProfile(
     }
   } catch { toolCount = null }
 
+  // ---------- 5. 生命核心（v0.2 增强：「此刻的我」） ----------
+  const life = loadLifeCore(notes)
+
   return {
     generatedAt: new Date().toISOString(),
     stats: { total: entries.length, byKind, archived },
@@ -292,6 +369,7 @@ async function buildProfile(
     cycles,
     ownerFeed,
     notes,
+    life,
   }
 }
 
@@ -380,4 +458,76 @@ function collectPlugins(exec: ToolRunContext | undefined, notes: string[]): { na
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
   return out
+}
+
+/**
+ * 读取生命核心数据（v0.2 增强）：DSH_HOME/life-core/state.json + life-log.jsonl。
+ * 防御式：文件缺失/解析失败 → exists:false + note，只读工具永不 crash。
+ */
+function loadLifeCore(notes: string[]): LifeCoreProfile {
+  const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const dir = join(dshHome, 'life-core')
+  const statePath = join(dir, 'state.json')
+  const logPath = join(dir, 'life-log.jsonl')
+  if (!existsSync(statePath)) {
+    notes.push('生命核心数据未找到（' + statePath + '）——档案不含「此刻的我」')
+    return { exists: false, recent: [] }
+  }
+  try {
+    const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      status?: string
+      todayTurns?: number
+      cycleMinutes?: number
+      idleMinutes?: number
+      bornAt?: string
+      self?: { role?: string; relation?: string; creed?: string; concerns?: string[]; values?: Record<string, number> }
+    }
+    const bornAt = state.bornAt ?? ''
+    let bornDays: number | undefined
+    const bornMs = bornAt === '' ? NaN : new Date(bornAt).getTime()
+    if (!isNaN(bornMs)) bornDays = Math.max(1, Math.floor((Date.now() - bornMs) / 86400000))
+
+    let recent: { at: string; kind: string; summary: string }[] = []
+    try {
+      if (existsSync(logPath)) {
+        const lines = readFileSync(logPath, 'utf8').split('\n').filter((l) => l.trim())
+        recent = lines
+          .slice(-10)
+          .map((l) => {
+            try {
+              const e = JSON.parse(l) as { at?: string; kind?: string; summary?: string }
+              return {
+                at: e.at ?? '',
+                kind: e.kind !== undefined ? (LIFE_KIND_LABEL[e.kind] ?? e.kind) : '',
+                summary: e.summary ?? '',
+              }
+            } catch { return null }
+          })
+          .filter((e): e is { at: string; kind: string; summary: string } => e !== null)
+      }
+    } catch { recent = [] }
+
+    return {
+      exists: true,
+      bornAt,
+      bornDays,
+      status: state.status,
+      todayTurns: state.todayTurns,
+      cycleMinutes: state.cycleMinutes,
+      idleMinutes: state.idleMinutes,
+      self: state.self !== undefined
+        ? {
+            role: state.self.role ?? '',
+            relation: state.self.relation ?? '',
+            creed: state.self.creed ?? '',
+            concerns: state.self.concerns ?? [],
+            values: state.self.values ?? {},
+          }
+        : undefined,
+      recent,
+    }
+  } catch (e) {
+    notes.push('生命核心状态解析失败（' + statePath + '）：' + String(e))
+    return { exists: false, recent: [] }
+  }
 }
