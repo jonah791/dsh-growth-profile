@@ -1,3 +1,13 @@
+<!--
+  DSH 插件生态公约声明（plugin-ecosystem-convention · 组合优先/声明清晰/兼容优先）
+  purpose: 养成档案：聚合当前状态/技能/里程碑/周目/主人反馈/生命核心为自我呈现视图（30s 实时轮询 + 精致面板；只读，被动哲学）
+  inject: 'tools','webServer'
+  tools: growth_profile
+  runtime: host-only
+  envDeps: 无（纯逻辑/标准 Node）
+  boundary: 无特殊授权边界
+  compat: cordis ^4.0.1 / dsh-tools ^0.1.0-rc.6
+-->
 # dsh-growth-profile — 养成档案插件
 
 DSH（DeepSeek Harness）插件：agent 的自我呈现视图——记忆/技能/插件/履历/关系档案聚合为「养成档案」，前端面板 tab 展示，提供 /api/growth-profile 接口。
