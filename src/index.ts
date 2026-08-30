@@ -379,7 +379,6 @@ function loadMemoryEntries(config: Config, notes: string[]): MemoryEntry[] {
   if (config.memoryPath !== undefined && config.memoryPath.length > 0) candidates.push(config.memoryPath)
   const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')
   candidates.push(join(dshHome, 'storages', 'agent_memory.json'))
-  candidates.push(join(homedir(), '.dsh', 'storages', 'agent_memory.json'))
   for (const p of candidates) {
     if (!existsSync(p)) continue
     try {
