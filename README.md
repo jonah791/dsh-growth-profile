@@ -10,6 +10,12 @@
 -->
 # dsh-growth-profile — 养成档案插件
 
+
+<p align="center">
+  <a href="https://github.com/jonah791/dsh-growth-profile"><img src="https://img.shields.io/badge/version-0.3.0-blue" alt="version"></a>
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="license">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6" alt="TypeScript">
+</p>
 DSH（DeepSeek Harness）插件：agent 的自我呈现视图——记忆/技能/插件/履历/关系档案聚合为「养成档案」，前端面板 tab 展示，提供 /api/growth-profile 接口。
 
 ## 功能特性
