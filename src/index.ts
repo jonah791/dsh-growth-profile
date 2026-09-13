@@ -18,7 +18,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {} from '@deepseek-ai/dsh-host-webserver' // Context.webServer 类型 merge
-import { createGrowthProfilePanel, type PanelHostLike } from './panel.ts'
 
 export const name = 'agent-growth-profile'
 export const inject = ['tools', 'webServer'] as const
@@ -271,18 +270,12 @@ export function apply(ctx: Context, config: Config): void {
     }),
   )
 
-  // 面板宿主贡献（2026-09-12，M2 首个消费方）：宿主是**可选**服务——缺席时本插件照常工作。
-  // 用 ctx.get 而非 ctx.<name>：严格代理下未声明 inject 的属性访问会抛错，而这里刻意不进 inject
-  // （inject 是激活门：把面板宿主写进 inject 会让「面板缺席」变成「养成档案整个不加载」，本末倒置）。
-  const panelHost = (ctx as unknown as { get?: (name: string) => unknown }).get?.call(ctx, 'panel') as PanelHostLike | undefined
-  if (panelHost !== undefined && typeof panelHost.register === 'function') {
-    ctx.effect(() =>
-      panelHost.register(createGrowthProfilePanel(() => buildProfile(ctx, undefined, config, { detail: false, limit: 30 }))),
-    )
-    ctx.logger('dsh-growth-profile').info('已注册面板贡献 → dsh-panel 宿主（成长档案面板）')
-  } else {
-    ctx.logger('dsh-growth-profile').info('面板宿主未挂载（ctx.panel 缺席）——跳过面板注册，旧端点 /api/growth-profile 仍可用')
-  }
+  // 面板贡献（2026-09-13 移交）：该面板已**迁入面板宿主成为内置面板**（dsh-panel
+  // `panels/growth-profile.ts`，id=`growth-profile` order=30）——宿主侧自包含读同一批落盘，
+  // 本插件不再注册同名贡献。这不是功能取舍而是**契约硬约束**：注册表对重复 id fail-loud
+  // （dsh-panel/src/registry.ts `duplicate panel id`），两边并存会让宿主加载即抛错。
+  // 本插件的工具（growth_profile）与旧路由（/api/growth-profile）保持不变；
+  // `src/panel.ts` 保留为历史实现，不再被引用。
 
   ctx.logger('dsh-growth-profile').info('ready（growth_profile 工具 + /api/growth-profile 端点已注册——养成档案，想看时调用，决策归爱丽丝）')
 }

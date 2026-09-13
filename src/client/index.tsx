@@ -314,12 +314,9 @@ function GrowthProfilePanel(): JSX.Element {
 }
 
 export function apply(ctx: ClientContext): void {
-  ctx.slots.inject('conversation.view', () =>
-    ctx.slots.register({
-      name: 'conversation.view',
-      id: 'growth-profile',
-      order: 20, // 轨迹（trajectory, order 10）旁边
-      label: () => '养成档案',
-    }, GrowthProfilePanel),
-  )
+  // 2026-09-13 撤除 GUI 槽位（主人定调：GUI 只留 1 个入口——面板宿主的「面板」按钮）：
+  // 原此处注册 `conversation.view` 的「养成档案」tab（id=growth-profile order=20）。
+  // 养成档案已迁为面板宿主里的一页（dsh-panel `panels/growth-profile.ts`，id=growth-profile order=30）。
+  // 保留本文件其余部分（GrowthProfilePanel 组件与取数逻辑）以便需要时恢复入口。
+  void ctx
 }
