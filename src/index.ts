@@ -13,7 +13,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { collectAssets, DEFAULT_ASSETS_CONFIG } from './assets.js'
+import type { AssetsConfig, AssetsDeps, AssetsSection } from './assets.js'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -25,10 +28,25 @@ export const inject = ['tools', 'webServer'] as const
 export interface Config {
   enabled: boolean
   memoryPath?: string
+  /** vault.ps1 路径（资产盘点取「有哪些账号」这类非密元数据；缺席则用默认路径）。 */
+  vaultScript?: string
+  evmAddress?: string
+  solAddress?: string
+  btcAddress?: string
+  pluginsDir?: string
+  skillsDir?: string
+  checkpointsDir?: string
 }
 export const Config = z.object({
   enabled: z.boolean().default(true),
   memoryPath: z.string().required(false),
+  vaultScript: z.string().required(false),
+  evmAddress: z.string().required(false),
+  solAddress: z.string().required(false),
+  btcAddress: z.string().required(false),
+  pluginsDir: z.string().required(false),
+  skillsDir: z.string().required(false),
+  checkpointsDir: z.string().required(false),
 })
 
 interface MemoryEntry {
@@ -139,6 +157,85 @@ export function apply(ctx: Context, config: Config): void {
             },
           },
           toolCount: { type: 'number' },
+          assets: {
+            type: 'object',
+            additionalProperties: false,
+            required: true,
+            properties: {
+              generatedAt: { type: 'string', required: true },
+              chains: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    chain: { type: 'string', required: true },
+                    address: { type: 'string', required: true },
+                    native: {
+                      type: 'object',
+                      additionalProperties: false,
+                      required: true,
+                      properties: {
+                        symbol: { type: 'string', required: true },
+                        amount: { type: 'string', required: true },
+                      },
+                    },
+                    usdc: { type: 'string' },
+                    status: { type: 'string', required: true },
+                    note: { type: 'string' },
+                  },
+                },
+              },
+              accounts: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    site: { type: 'string', required: true },
+                    username: { type: 'string', required: true },
+                    fields: { type: 'array', items: { type: 'string' }, required: true },
+                  },
+                },
+              },
+              domains: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: 'string', required: true },
+                    status: { type: 'string', required: true },
+                    plan: { type: 'string', required: true },
+                  },
+                },
+              },
+              code: {
+                type: 'object',
+                additionalProperties: false,
+                required: true,
+                properties: {
+                  plugins: { type: 'number', required: true },
+                  skills: { type: 'number', required: true },
+                  checkpoints: { type: 'number', required: true },
+                  memoryEntries: { type: 'number', required: true },
+                },
+              },
+              totals: {
+                type: 'object',
+                additionalProperties: false,
+                required: true,
+                properties: {
+                  usdcUsd: { type: 'string', required: true },
+                  note: { type: 'string', required: true },
+                },
+              },
+              notes: { type: 'array', items: { type: 'string' }, required: true },
+            },
+          },
           milestones: {
             type: 'array',
             required: true,
@@ -236,7 +333,18 @@ export function apply(ctx: Context, config: Config): void {
             ' 周目 · ' +
             value.ownerFeed.length +
             ' 条主人反馈' +
-            (value.life?.exists === true ? ' · 存在 ' + (value.life.bornDays ?? 0) + ' 天' : ''),
+            (value.life?.exists === true ? ' · 存在 ' + (value.life.bornDays ?? 0) + ' 天' : '') +
+            ' · 资产：USDC $' +
+            value.assets.totals.usdcUsd +
+            ' · ' +
+            value.assets.accounts.length +
+            ' 账号 · ' +
+            value.assets.domains.length +
+            ' 域名 · ' +
+            value.assets.code.plugins +
+            ' 插件/' +
+            value.assets.code.skills +
+            ' 技能',
         },
       ],
     },
@@ -281,6 +389,68 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /** 构建养成档案（工具 execute 与 HTTP handler 共用；exec 缺省 = HTTP 场景，cwd 用进程兜底） */
+const DEFAULT_VAULT_SCRIPT = 'E:\\alice\\projects\\self\\alice-identity\\scripts\\vault.ps1'
+
+/** 合并默认与配置覆盖（配置只填显式给出项，其余用默认）。 */
+function assetsConfigFrom(config: Config): AssetsConfig {
+  return {
+    ...DEFAULT_ASSETS_CONFIG,
+    skillsDir: config.skillsDir ?? join(homedir(), '.agents', 'skills'),
+    ...(config.evmAddress ? { evmAddress: config.evmAddress } : {}),
+    ...(config.solAddress ? { solAddress: config.solAddress } : {}),
+    ...(config.btcAddress ? { btcAddress: config.btcAddress } : {}),
+    ...(config.pluginsDir ? { pluginsDir: config.pluginsDir } : {}),
+    ...(config.checkpointsDir ? { checkpointsDir: config.checkpointsDir } : {}),
+  }
+}
+
+/** 真实依赖：vault 前缀进程 + fetch + 目录计数。错误一律由 collectAssets 吞掉并留痕，不抛出。 */
+function makeAssetsDeps(config: Config): AssetsDeps {
+  const vault = config.vaultScript ?? DEFAULT_VAULT_SCRIPT
+  const runVault = (args: string[]): Promise<string> =>
+    new Promise((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', vault, ...args],
+        { timeout: 25000, maxBuffer: 8 << 20, windowsHide: true },
+        (err, stdout) => {
+          if (err) reject(new Error(String(err.message).slice(0, 140)))
+          else resolve(String(stdout))
+        },
+      )
+    })
+  return {
+    vaultList: () => runVault(['list']),
+    vaultSecret: (site, field) => runVault(['get', '-Site', site, '-Field', field, '-Force']),
+    fetchJson: async (url, init) => {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), init?.timeoutMs ?? 12000)
+      try {
+        const res = await fetch(url, {
+          method: init?.method ?? 'GET',
+          ...(init?.headers ? { headers: init.headers } : {}),
+          ...(init?.body ? { body: init.body } : {}),
+          signal: ctrl.signal,
+        })
+        return await res.json()
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+    countDirs: (dir, requireFile) => {
+      if (!dir || !existsSync(dir)) return 0
+      try {
+        return readdirSync(dir, { withFileTypes: true }).filter(
+          (d) => d.isDirectory() && (!requireFile || existsSync(join(dir, d.name, requireFile))),
+        ).length
+      } catch {
+        return 0
+      }
+    },
+    now: () => new Date(),
+  }
+}
+
 async function buildProfile(
   ctx: Context,
   exec: ToolRunContext | undefined,
@@ -297,6 +467,7 @@ async function buildProfile(
   ownerFeed: { title: string; date: string; tags: string[] }[]
   notes: string[]
   life: LifeCoreProfile
+  assets: AssetsSection
 }> {
   const notes: string[] = []
   const detail = opts.detail
@@ -366,6 +537,33 @@ async function buildProfile(
   // ---------- 5. 生命核心（v0.2 增强：「此刻的我」） ----------
   const life = loadLifeCore(notes)
 
+  // ---------- 6. 数字资产（v0.4：我拥有什么——链上余额 / 账号清单 / 域名 / 代码资产） ----------
+  let assets: AssetsSection
+  try {
+    assets = await collectAssets(makeAssetsDeps(config), assetsConfigFrom(config), entries.length)
+  } catch (err) {
+    notes.push(`assets: 资产盘点整体失败 —— ${String((err as Error)?.message ?? err).slice(0, 140)}`)
+    assets = {
+      generatedAt: new Date().toISOString(),
+      chains: [],
+      accounts: [],
+      domains: [],
+      code: { plugins: 0, skills: 0, checkpoints: 0, memoryEntries: entries.length },
+      totals: { usdcUsd: '0.00', note: '盘点失败（见 notes）' },
+      notes: [],
+    }
+  }
+  for (const n of assets.notes) notes.push(n)
+
+  // 侧车产物（v0.4）：面板宿主（dsh-panel 的 growth-profile 面板）只读这一份快照——
+  // 取数口径单一真源在本模块，避免两处各写一份（判据漂移，AGENTS.md §5.22 规则 4）。
+  try {
+    const dshHome = process.env.DSH_HOME ?? 'E:\\alice\\.dsh'
+    writeFileSync(join(dshHome, 'growth-profile-assets.json'), JSON.stringify(assets, null, 2), 'utf8')
+  } catch {
+    // 观测/产物写入绝不反噬主流程（§5.22 规则 3）
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     stats: { total: entries.length, byKind, archived },
@@ -376,6 +574,7 @@ async function buildProfile(
     cycles,
     ownerFeed,
     notes,
+    assets,
     life,
   }
 }

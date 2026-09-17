@@ -53,6 +53,14 @@ export interface GrowthProfileLike {
     self?: { role?: string; relation?: string; creed?: string; concerns?: string[]; values?: Record<string, number> }
     recent?: Array<{ at?: string; kind?: string; summary?: string }>
   }
+  assets?: {
+    totals?: { usdcUsd?: string; note?: string }
+    chains?: Array<{ chain?: string; address?: string; native?: { symbol?: string; amount?: string }; usdc?: string; status?: string; note?: string }>
+    accounts?: Array<{ site?: string; username?: string; fields?: string[] }>
+    domains?: Array<{ name?: string; status?: string; plan?: string }>
+    code?: { plugins?: number; skills?: number; checkpoints?: number; memoryEntries?: number }
+    notes?: string[]
+  }
 }
 
 /** 截断长文本（面板是给人扫的，不是给人读全文的）。 */
@@ -96,6 +104,76 @@ export function toGrowthPanelSpec(profile: GrowthProfileLike): { blocks: PanelBl
       { label: '存在天数', value: life.bornDays === undefined ? '—' : String(life.bornDays) + ' 天' },
     ],
   })
+
+  // ---------- 数字资产（v0.4：我拥有什么——链上 / 账号 / 域名 / 代码） ----------
+  const assets = profile.assets ?? {}
+  const totals = assets.totals ?? {}
+  const codes = assets.code ?? {}
+  const chains = assets.chains ?? []
+  const accounts = assets.accounts ?? []
+  const domains = assets.domains ?? []
+  const assetNotes = assets.notes ?? []
+  const hasAssetData = chains.length + accounts.length + domains.length + (codes.plugins ?? 0) + (codes.skills ?? 0) > 0
+  if (hasAssetData) {
+    blocks.push({
+      kind: 'metrics',
+      title: '数字资产 · 总览',
+      items: [
+        { label: 'USDC 折算', value: '$' + (totals.usdcUsd ?? '—'), hint: '只折算 stablecoin；原生币显示原量，不臆断估值', tone: Number(totals.usdcUsd ?? 0) > 0 ? 'ok' : 'muted' },
+        { label: '链上地址', value: String(chains.length), hint: chains.map((c) => c.chain ?? '').filter(Boolean).join(' / ') },
+        { label: '账号（vault）', value: String(accounts.length), hint: '只列非密元数据' },
+        { label: '域名', value: String(domains.length), hint: domains.map((d) => d.name ?? '').filter(Boolean).join(' / ') },
+        { label: '代码资产', value: String(codes.plugins ?? 0) + ' 插件 / ' + String(codes.skills ?? 0) + ' 技能', hint: 'checkpoint ' + String(codes.checkpoints ?? 0) + ' · 记忆 ' + String(codes.memoryEntries ?? 0) },
+      ],
+    })
+  }
+  if (chains.length > 0) {
+    blocks.push({
+      kind: 'table',
+      title: '链上余额（只读快照）',
+      columns: [
+        { key: 'chain', label: '链' },
+        { key: 'address', label: '地址' },
+        { key: 'amount', label: '原生', align: 'right' },
+        { key: 'usdc', label: 'USDC', align: 'right' },
+        { key: 'status', label: '状态' },
+      ],
+      rows: chains.map((c) => ({
+        chain: c.chain ?? '—',
+        address: clip(c.address, 14),
+        amount: (c.native?.amount ?? '—') + ' ' + (c.native?.symbol ?? ''),
+        usdc: c.usdc ?? '—',
+        status: c.status === 'ok' ? 'ok' : 'error: ' + clip(c.note, 40),
+      })),
+    })
+  }
+  if (accounts.length > 0) {
+    blocks.push({
+      kind: 'table',
+      title: '账号清单（vault 元数据，无密值）',
+      columns: [
+        { key: 'site', label: '站点' },
+        { key: 'username', label: '账号' },
+        { key: 'fields', label: '凭据字段' },
+      ],
+      rows: accounts.map((a) => ({ site: a.site ?? '—', username: clip(a.username, 34), fields: (a.fields ?? []).join(',') })),
+    })
+  }
+  if (domains.length > 0) {
+    blocks.push({
+      kind: 'table',
+      title: '域名',
+      columns: [
+        { key: 'name', label: '域名' },
+        { key: 'status', label: '状态' },
+        { key: 'plan', label: '方案' },
+      ],
+      rows: domains.map((d) => ({ name: d.name ?? '—', status: d.status ?? '—', plan: d.plan ?? '—' })),
+    })
+  }
+  if (assetNotes.length > 0) {
+    blocks.push({ kind: 'text', title: '资产盘点降级说明（取数失败不伪装成 0）', lines: assetNotes.map((n) => clip(n, 160)) })
+  }
 
   if (life.exists === true) {
     blocks.push({

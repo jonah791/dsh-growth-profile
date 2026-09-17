@@ -75,7 +75,9 @@ test('life-core 缺席 → 降级为 text 提示块，其余块照常', () => {
   assert.equal(blocksOf(spec, 'kv').length, 0)
   assert.equal(blocksOf(spec, 'timeline').length, 0)
   assert.ok(blocksOf(spec, 'text').length >= 1)
-  assert.ok(blocksOf(spec, 'metrics').length === 1, '总览仍在')
+  const metrics = blocksOf(spec, 'metrics')
+  assert.ok(metrics.length >= 1, '总览仍在')
+  assert.equal(metrics[0].title, '养成档案 · 总览')
 })
 
 test('空档案（首启/路径缺失）→ 不崩、不产生空块噪音', () => {
@@ -85,6 +87,26 @@ test('空档案（首启/路径缺失）→ 不崩、不产生空块噪音', () 
   assert.equal(blocksOf(spec, 'table').length, 0, '无技能则不渲染空表')
   const metrics = blocksOf(spec, 'metrics')[0]
   assert.equal(Object.fromEntries(metrics.items.map((i) => [i.label, i.value]))['记忆条目'], '0')
+})
+
+test('资产段：有数据才出块（总览 metrics + 三张表 + 降级说明），无数据不留噪音', () => {
+  const spec = toGrowthPanelSpec({
+    stats: { total: 831 },
+    assets: {
+      totals: { usdcUsd: '0.00', note: 'x' },
+      chains: [{ chain: 'Base', address: '0xA96b64ac53196021f4a9', native: { symbol: 'ETH', amount: '0' }, usdc: '0', status: 'ok' }],
+      accounts: [{ site: 'x.com', username: 'aliceyachiyo', fields: ['password'] }],
+      domains: [{ name: 'validator-community.com', status: 'active', plan: 'Free Website' }],
+      code: { plugins: 57, skills: 67, checkpoints: 10, memoryEntries: 831 },
+      notes: ['assets: Solana 余额取数失败 —— rpc down'],
+    },
+  })
+  const metrics = blocksOf(spec, 'metrics')
+  assert.ok(metrics.some((m) => m.title === '数字资产 · 总览'), '资产总览出现')
+  assert.equal(blocksOf(spec, 'table').length, 3, '链上/账号/域名三张表')
+  assert.ok(blocksOf(spec, 'text').some((t) => String(t.title).includes('降级说明')), '降级说明必须可见')
+  const bare = toGrowthPanelSpec({ assets: { totals: { usdcUsd: '0.00' } } })
+  assert.ok(!blocksOf(bare, 'metrics').some((m) => m.title === '数字资产 · 总览'), '无数据不出空块')
 })
 
 test('贡献契约：id/title/order 合法，view 返回 blocks 数组（宿主可渲染形状）', async () => {
