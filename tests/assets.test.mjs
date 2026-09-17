@@ -70,12 +70,15 @@ test('collectAssets 降级要留痕：链上失败进 notes、不伪装成 0', a
   assert.equal(base?.status, 'error')
   assert.ok(out.notes.some((n) => n.includes('Base')), '链上失败必须在 notes 里留痕')
   assert.ok(out.notes.some((n) => n.includes('域名')), '域名取数失败必须在 notes 里留痕')
+  // 2026-09-17：vault 走表格降级解析同样必须可见（旧脚本无 list-json ⇒ 存在错位风险）
+  assert.ok(out.notes.some((n) => n.includes('表格降级')), 'vault 表格解析必须在 notes 里留痕')
   assert.equal(out.totals.usdcUsd, '0.00')
 })
 
 test('collectAssets 全通路径：三链 ok + 域名 + 账号', async () => {
   const deps = {
-    vaultList: async () => 'site  username  fields  updatedAt\n----  ----  ----  ----\nx.com   alice   password,notes   2026-01-01\n',
+    // 2026-09-17：主路径改为结构化输出（`list-json`）——线上现在走这条
+    vaultList: async () => JSON.stringify([{ site: 'x.com', username: 'alice', fields: 'password,notes', updatedAt: '2026-01-01' }]),
     vaultSecret: async () => 'api-token=TOKENVALUE',
     fetchJson: async (url) => {
       if (url.includes('base.org')) return { result: '0x0' }

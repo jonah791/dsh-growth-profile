@@ -98,6 +98,54 @@ export function parseVaultList(stdout: string): AssetAccount[] {
   return out
 }
 
+/**
+ * 解析 `vault.ps1 list-json` 的结构化输出（2026-09-17 新增）。
+ *
+ * 动机（实测事故）：`list` 走 `Format-Table -AutoSize`——列宽自适配、超宽**会截断**；
+ * 按 `\s{2,}` 切列在「值含空格 / 列被截断」时必然错位（线上侧车快照里 `wallet-sol`
+ * 的 username 收进了「… password」、`cloudflare-api` 的 username 变成了「notes」）。
+ * 结构化输出让字段归属不再依赖列宽。非法/空输入返回空数组（由调用方留痕，不猜）。
+ */
+export function parseVaultListJson(stdout: string): AssetAccount[] {
+  const text = String(stdout).trim()
+  if (text === '') return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: AssetAccount[] = []
+  for (const row of parsed) {
+    if (row === null || typeof row !== 'object') continue
+    const rec = row as Record<string, unknown>
+    const site = typeof rec['site'] === 'string' ? rec['site'].trim() : ''
+    if (site === '') continue
+    const username = typeof rec['username'] === 'string' ? rec['username'].trim() : ''
+    const rawFields = typeof rec['fields'] === 'string' ? rec['fields'] : ''
+    out.push({
+      site,
+      username,
+      fields: rawFields.split(',').map((f) => f.trim()).filter(Boolean),
+    })
+  }
+  return out
+}
+
+/**
+ * 自动选择解析路径（兼容旧脚本）：以 `[` / `{` 开头 ⇒ JSON；否则退回定宽表格。
+ * 返回 `format` 供调用方决定是否留「走了降级路径」的痕——**降级必须可见**。
+ */
+export function parseVaultListAuto(stdout: string): { accounts: AssetAccount[]; format: 'json' | 'table' } {
+  const head = String(stdout).trimStart()
+  if (head.startsWith('[') || head.startsWith('{')) {
+    const accounts = parseVaultListJson(stdout)
+    if (accounts.length > 0 || head.startsWith('[')) return { accounts, format: 'json' }
+  }
+  return { accounts: parseVaultList(stdout), format: 'table' }
+}
+
 /** Cloudflare zones 响应 → 域名清单（只留非敏感字段）。 */
 export function parseZones(payload: unknown): AssetDomain[] {
   const result = (payload as { result?: unknown })?.result
@@ -143,6 +191,16 @@ const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const BASE_RPC = 'https://mainnet.base.org'
 const SOL_RPC = 'https://solana-rpc.publicnode.com'
 const BTC_API = 'https://mempool.space/api/address/'
+/**
+ * Bitcoin 余额端点（按序回退）。2026-09-17 实测：本机直连 mempool.space 报 `fetch failed`
+ * （该域名在当前网络不可达），而 Base / Solana 的公共 RPC 正常 ⇒ 该换端点，不该换网络。
+ * 三者给出**同一 Esplora 语义**（`{chain_stats:{funded_txo_sum,spent_txo_sum}}`）。
+ */
+const BTC_APIS = [
+  BTC_API,
+  'https://blockstream.info/api/address/',
+  'https://mempool.emzy.de/api/address/',
+]
 
 const pad32 = (addr: string): string => '000000000000000000000000' + addr.toLowerCase().replace(/^0x/, '')
 
@@ -179,16 +237,34 @@ export async function collectChains(deps: AssetsDeps, cfg: AssetsConfig, notes: 
     notes.push(`assets: Solana 余额取数失败 —— ${String((err as Error)?.message ?? err).slice(0, 120)}`)
   }
 
-  // Bitcoin
-  try {
-    const t = (await deps.fetchJson(BTC_API + cfg.btcAddress, { timeoutMs: 12000 })) as { chain_stats?: { funded_txo_sum?: number; spent_txo_sum?: number } }
-    const funded = t?.chain_stats?.funded_txo_sum
-    const spent = t?.chain_stats?.spent_txo_sum
-    if (typeof funded !== 'number' || typeof spent !== 'number') throw new Error('no chain_stats')
-    out.push({ chain: 'Bitcoin', address: cfg.btcAddress, native: { symbol: 'BTC', amount: formatUnits(String(funded - spent), 8) }, status: 'ok' })
-  } catch (err) {
-    out.push({ chain: 'Bitcoin', address: cfg.btcAddress, native: { symbol: 'BTC', amount: '—' }, status: 'error', note: String((err as Error)?.message ?? err).slice(0, 120) })
-    notes.push(`assets: Bitcoin 余额取数失败 —— ${String((err as Error)?.message ?? err).slice(0, 120)}`)
+  // Bitcoin：多端点回退（2026-09-17 实测 mempool.space 在本机不可达 ⇒ 单端点即单点故障）
+  const btcErrors: string[] = []
+  for (const api of BTC_APIS) {
+    try {
+      const t = (await deps.fetchJson(api + cfg.btcAddress, { timeoutMs: 12000 })) as { chain_stats?: { funded_txo_sum?: number; spent_txo_sum?: number } }
+      const funded = t?.chain_stats?.funded_txo_sum
+      const spent = t?.chain_stats?.spent_txo_sum
+      if (typeof funded !== 'number' || typeof spent !== 'number') throw new Error('no chain_stats')
+      out.push({
+        chain: 'Bitcoin',
+        address: cfg.btcAddress,
+        native: { symbol: 'BTC', amount: formatUnits(String(funded - spent), 8) },
+        status: 'ok',
+        ...(api !== BTC_APIS[0] ? { note: `端点回退：${api}` } : {}),
+      })
+      if (api !== BTC_APIS[0]) {
+        notes.push(`assets: Bitcoin 走端点回退（${api}）——首选 ${String(BTC_APIS[0] ?? '')} 不可达`)
+      }
+      break
+    } catch (err) {
+      const host = api.replace('https://', '').replace('/api/address/', '')
+      btcErrors.push(`${host}: ${String((err as Error)?.message ?? err).slice(0, 60)}`)
+    }
+  }
+  if (!out.some((c) => c.chain === 'Bitcoin')) {
+    const detail = btcErrors.join(' | ').slice(0, 180)
+    out.push({ chain: 'Bitcoin', address: cfg.btcAddress, native: { symbol: 'BTC', amount: '—' }, status: 'error', note: detail })
+    notes.push(`assets: Bitcoin 余额取数失败（${BTC_APIS.length} 个端点全败）—— ${detail}`)
   }
 
   return out
@@ -217,7 +293,11 @@ export async function collectAssets(deps: AssetsDeps, cfg: AssetsConfig, memoryE
 
   let accounts: AssetAccount[] = []
   try {
-    accounts = parseVaultList(await deps.vaultList())
+    const parsedVault = parseVaultListAuto(await deps.vaultList())
+    accounts = parsedVault.accounts
+    if (parsedVault.format === 'table') {
+      notes.push('assets: vault 清单走了**表格降级**解析（未拿到 list-json）——值含空格或超宽列可能错位')
+    }
     if (accounts.length === 0) notes.push('assets: vault 清单解析出 0 条（格式可能变了）')
   } catch (err) {
     notes.push(`assets: vault 清单取数失败 —— ${String((err as Error)?.message ?? err).slice(0, 120)}`)

@@ -420,7 +420,15 @@ function makeAssetsDeps(config: Config): AssetsDeps {
       )
     })
   return {
-    vaultList: () => runVault(['list']),
+    // 优先结构化输出（`list-json`，2026-09-17 新增）：旧脚本不认识该子命令 ⇒ 退回 `list`。
+    // 注意判据不是「有没有报错」而是**解析出的形状**（assets.ts 侧按内容自动选路并留痕）。
+    vaultList: async () => {
+      try {
+        return await runVault(['list-json'])
+      } catch {
+        return await runVault(['list'])
+      }
+    },
     vaultSecret: (site, field) => runVault(['get', '-Site', site, '-Field', field, '-Force']),
     fetchJson: async (url, init) => {
       const ctrl = new AbortController()
