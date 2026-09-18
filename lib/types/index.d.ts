@@ -16,12 +16,34 @@ export declare const inject: readonly ["tools", "webServer"];
 export interface Config {
     enabled: boolean;
     memoryPath?: string;
+    /** vault.ps1 路径（资产盘点取「有哪些账号」这类非密元数据；缺席则用默认路径）。 */
+    vaultScript?: string;
+    evmAddress?: string;
+    solAddress?: string;
+    btcAddress?: string;
+    pluginsDir?: string;
+    skillsDir?: string;
+    checkpointsDir?: string;
 }
 export declare const Config: z<Schemastery.ObjectS<{
     enabled: z<boolean, boolean>;
     memoryPath: z<string, string>;
+    vaultScript: z<string, string>;
+    evmAddress: z<string, string>;
+    solAddress: z<string, string>;
+    btcAddress: z<string, string>;
+    pluginsDir: z<string, string>;
+    skillsDir: z<string, string>;
+    checkpointsDir: z<string, string>;
 }>, Schemastery.ObjectT<{
     enabled: z<boolean, boolean>;
     memoryPath: z<string, string>;
+    vaultScript: z<string, string>;
+    evmAddress: z<string, string>;
+    solAddress: z<string, string>;
+    btcAddress: z<string, string>;
+    pluginsDir: z<string, string>;
+    skillsDir: z<string, string>;
+    checkpointsDir: z<string, string>;
 }>>;
 export declare function apply(ctx: Context, config: Config): void;
