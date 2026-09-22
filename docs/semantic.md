@@ -6,7 +6,7 @@
 | 主副本路径 | `self-plugins/dsh-growth-profile/docs/semantic.md` |
 | 实现落点 | `self-plugins/dsh-growth-profile/src/index.ts`（746 行级：工具 `growth_profile` + HTTP 端点 `/api/growth-profile` + 五路只读数据源 + **数字资产段接线与侧车快照**）<br>`.../src/assets.ts`（**2026-09-17 新增**：数字资产汇总纯逻辑 + 可注入依赖 `fetchJson`/`vaultList`/`countDirs`）<br>`.../src/panel.ts`（**历史实现，已不被引用**——面板已迁入面板宿主；2026-09-17 随 v0.4 增补了 assets 段渲染）<br>`.../src/client/index.tsx`（浏览器面：取数组件 `GrowthProfilePanel` + 30s 轮询；槽位注册已撤除）<br>`.../tests/panel.test.mjs`（对 `lib/panel.js` 的离线单测） |
 | 版本 | 0.4.0（`package.json`；本文成文于 0.3.1，2026-09-22 复核回写至 0.4.0） |
-| 挂载位置 | `E:\alice\.dsh\profiles\web\cordis.patch.yml` 第 114 行 `- insert:` / 第 115 行 `- id: agent-growth-profile` / 第 116 行 `name: dsh-growth-profile`（**该行无 config** → `enabled=true`、`memoryPath` 未设） |
+| 挂载位置 | `E:\alice\.dsh\profiles\web\cordis.patch.yml` 第 114 行 `- insert:` / 第 115 行 `- id: agent-growth-profile` / 第 116 行 `name: dsh-growth-profile`（**该行无 config** → `enabled=true`、`memoryPath` 未设，**v0.4 的 7 个资产字段也全未设** ⇒ 全走源码默认值，见 §4.1 与 U6） |
 | 状态 | **draft**（补课文档；验收条目多数待线上复核） |
 | 依赖服务 | `inject = ['tools', 'webServer']`（`webServer` 缺失会导致插件加载失败——它是必填 injection，不是可选） |
 | 外部依赖 | **2026-09-17 起非纯本地**：① `fetch` → 链上 RPC / 区块浏览器 / Cloudflare 只读 API（只为**读余额与域名列表**，不构造交易、不写入第三方）② `powershell.exe -File vault.ps1`（子进程，只为取「有哪些账号」这类**非密元数据**）③ `node:fs`（五路只读 + 一份侧车快照写入）。其余数据源仍为既有落盘：记忆库、技能目录、`self-plugins/`、`life-core/` |
@@ -91,7 +91,7 @@ GUI：dsh-panel（面板宿主）panels/growth-profile.ts
 | `pluginsDir` / `skillsDir` / `checkpointsDir` | 无（可选；缺省 `E:\alice\self-plugins` / `<homedir>/.agents/skills` / `E:\alice\.dsh\checkpoints`） | 代码资产计数的三个根（`countDirs`） |
 | ——（**不可配**） | `cloudflareVaultSite = 'cloudflare-api'` | Cloudflare token 的 vault 站点名写死在 `DEFAULT_ASSETS_CONFIG`，Config 未暴露（见 U6） |
 
-### 4.2 数据源契约（五路只读）
+### 4.2 数据源契约（六路：五路本地只读 + 数字资产一路出网，v0.4）
 | 源 | 路径 / 判据 | 缺失时 |
 |----|------------|--------|
 | 记忆库 | `config.memoryPath` → `<DSH_HOME>/storages/agent_memory.json`；读 `tables.entries` | `notes` + 空集 |
