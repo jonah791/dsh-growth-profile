@@ -7,7 +7,9 @@
  * - 被动哲学：只读展示；决策归爱丽丝
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+// 0.1.7 契约：聚合包 `dsh-client-runtime/client` 已被上游移除（rc.8 起），
+// ClientContext 回到属主包 @deepseek-ai/cordis（harness 内统一写法）。
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 export const inject = ['slots']
