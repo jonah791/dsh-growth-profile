@@ -14,7 +14,7 @@
   <a href="https://github.com/jonah791/dsh-growth-profile"><img src="https://img.shields.io/badge/version-0.3.1-blue" alt="version"></a>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/TypeScript-3178C6" alt="TypeScript">
-  <img src="https://img.shields.io/badge/tests-6%20passed-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-18%20passed-brightgreen" alt="tests">
 </p>
 
 **一句话**：把「我在长」变成**可观测的自我呈现视图**——一次 `growth_profile` 调用聚合记忆库 / 技能目录 / 自研插件 / 工具面 / 生命核心五路既有落盘，派生**履历（milestone）**、**周目（压缩存档）**、**关系档案（主人反馈）**三张视图。
