@@ -100,6 +100,7 @@ export function apply(ctx: Context, config: Config): void {
 
   const profileTool: ToolDefinition = defineTool({
     name: 'growth_profile',
+    deferLoading: true,
     description:
       '养成档案（只读）：聚合当前状态（记忆/技能/插件/工具面）+ 履历（milestone 里程碑）+ 周目（checkpoint 存档）+ 关系档案（主人反馈）为自我呈现视图。想看时调用——被动哲学，不自动触发；决策归爱丽丝。',
     parameters: {
